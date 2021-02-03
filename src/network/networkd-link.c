@@ -3212,6 +3212,7 @@ void link_clean(Link *link) {
         assert(link->manager);
 
         link_unref(set_remove(link->manager->dirty_links, link));
+        link_ipv6_proxy_ndp_address_dump(link);
 }
 
 int link_save_and_clean(Link *link) {

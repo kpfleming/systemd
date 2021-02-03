@@ -12,6 +12,67 @@
 #include "string-util.h"
 #include "sysctl-util.h"
 
+int link_ipv6_proxy_ndp_address_dump(Link *link) {
+        _cleanup_(sd_netlink_message_unrefp) sd_netlink_message *req = NULL, *reply = NULL;
+        int r;
+
+        assert(link);
+        assert(link->manager);
+
+        log_link_debug(link, "Dumping IPv6 Proxy NDP addresses");
+
+        /* create new netlink message */
+        r = sd_rtnl_message_new_neigh(link->manager->rtnl, &req, RTM_GETNEIGH, link->ifindex, AF_INET6);
+        if (r < 0)
+                return log_link_debug_errno(link, r, "Could not create RTM_GETNEIGH message: %m");
+
+        r = sd_netlink_message_request_dump(req, true);
+        if (r < 0)
+                return log_link_message_debug_errno(link, req, r, "Could not set message flags: %m");
+
+        r = sd_rtnl_message_neigh_set_flags(req, NTF_PROXY);
+        if (r < 0)
+                return log_link_message_debug_errno(link, req, r, "Could not set neighbor flags: %m");
+
+        r = sd_netlink_call(link->manager->rtnl, req, 0, &reply);
+        if (r < 0)
+                return log_link_message_debug_errno(link, req, r, "Could not send rtnetlink message: %m");
+
+        for (sd_netlink_message *m = reply; m; m = sd_netlink_message_next(m)) {
+                union in_addr_union addr = IN_ADDR_NULL;
+                uint16_t type;
+                _cleanup_free_ char *addrstr = NULL;
+
+                r = sd_netlink_message_get_errno(m);
+                if (r < 0) {
+                        log_link_message_debug_errno(link, m, r, "got error: %m");
+                        continue;
+                }
+
+                r = sd_netlink_message_get_type(m, &type);
+                if (r < 0) {
+                        log_link_message_debug_errno(link, m, r, "could not get type: %m");
+                        continue;
+                }
+
+                if (type != RTM_NEWNEIGH) {
+                        log_link_debug(link, "type is not RTM_NEWNEIGH");
+                        continue;
+                }
+
+                r = sd_netlink_message_read_in6_addr(m, NDA_DST, &addr.in6);
+                if (r < 0) {
+                        log_link_message_debug_errno(link, m, r, "could not get address: %m");
+                        continue;
+                }
+
+                (void) in_addr_to_string(AF_INET6, &addr, &addrstr);
+                log_link_debug(link, "IPv6 Proxy NDP Address: %s", strna(addrstr));
+        }
+
+        return 0;
+}
+
 static int set_ipv6_proxy_ndp_address_handler(sd_netlink *rtnl, sd_netlink_message *m, Link *link) {
         int r;
 
