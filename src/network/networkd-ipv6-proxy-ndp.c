@@ -41,6 +41,7 @@ int link_ipv6_proxy_ndp_address_dump(Link *link) {
         for (sd_netlink_message *m = reply; m; m = sd_netlink_message_next(m)) {
                 union in_addr_union addr = IN_ADDR_NULL;
                 uint16_t type;
+                int ifindex;
                 _cleanup_free_ char *addrstr = NULL;
 
                 r = sd_netlink_message_get_errno(m);
@@ -59,6 +60,15 @@ int link_ipv6_proxy_ndp_address_dump(Link *link) {
                         log_link_debug(link, "type is not RTM_NEWNEIGH");
                         continue;
                 }
+
+                r = sd_rtnl_message_neigh_get_ifindex(m, &ifindex);
+                if (r < 0) {
+                        log_link_message_debug_errno(link, m, r, "could not get ifindex: %m");
+                        continue;
+                }
+
+                if (ifindex != link->ifindex)
+                        continue;
 
                 r = sd_netlink_message_read_in6_addr(m, NDA_DST, &addr.in6);
                 if (r < 0) {
